@@ -11,11 +11,22 @@
 #include "geometry.hpp"
 
 
+// Determine rendered colours
+struct Material
+{
+    Material(const Vec3f& colour) :
+        diffuse_colour_(colour)
+    {}
+    Material() : diffuse_colour_() {}
+    Vec3f diffuse_colour_;
+};
+
+// Object used to populate the scene
 class Sphere
 {
     public:
-        Sphere(const Vec3f &center, const float &radius) :
-            center_(center), radius_(radius)
+        Sphere(const Vec3f &center, const float &radius, const Material& material) :
+            center_(center), radius_(radius), material_(material)
         {}
 
         // Determine whether a ray intersects the sphere
@@ -47,26 +58,49 @@ class Sphere
             return true;
         }
 
+        Vec3f GetCenter() const { return center_; }
+        float GetRadius() const { return radius_; }
+        Material GetMaterial() const { return material_; }
     private:
         Vec3f center_;
         float radius_;
+        Material material_;
 };
 
-// Cast a ray from the origin to the sphere in the given direction
-Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const Sphere& sphere)
+// Determine overlapping sphere priority (intersections)
+bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, Vec3f& hit, Vec3f& N, Material& material)
 {
-    float sphere_distance = std::numeric_limits<float>::max();
+    float spheres_distance = std::numeric_limits<float>::max();
+    for (std::size_t i = 0; i < spheres.size(); i++)
+    {
+        float dist_i;
+        if ((spheres[i].RayIntersect(origin, direction, dist_i)) && (dist_i < spheres_distance))
+        {
+            spheres_distance = dist_i;
+            hit = origin + direction*dist_i;
+            N = (hit - spheres[i].GetCenter()).normalise();
+            material = spheres[i].GetMaterial();
+        }
+    }
+    return spheres_distance < 1000;
+}
+
+// Cast a ray from the origin to the spheres in the given direction
+Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres)
+{
+    Vec3f point, N;
+    Material material;
     // If the ray doesn't intersect, return background colour
-    if (!sphere.RayIntersect(origin, direction, sphere_distance))
+    if (!SceneIntersect(origin, direction, spheres, point, N, material))
     {
         return Vec3f(0.2, 0.7, 0.8);
     }
-    // Else return set colour
-    return Vec3f(0.4, 0.4, 0.3);
+    // Else return material of sphere
+    return material.diffuse_colour_;
 }
 
 // Render image
-void render(const Sphere &sphere)
+void Render(const std::vector<Sphere>& spheres)
 {
     const int width = 1024;
     const int height = 768;
@@ -78,10 +112,15 @@ void render(const Sphere &sphere)
     {
         for (std::size_t i = 0; i < width; i++)
         {
-            float x = (2*(i + 0.5)/(float)width - 1) * tan(fov/2.0)*width/(float)height;
-            float y = -(2*(j + 0.5)/(float)height- 1) * tan(fov/2.0);
-            Vec3f direction = Vec3f(x, y, -1).normalise();
-            frame_buffer[i + j*width] = CastRay(Vec3f(0, 0, 0), direction, sphere);
+            // Use normalized device coordinates remapped from [0:1] to [-1:1]
+            float x_ndc = 2 * ((i + 0.5) / (float)width) - 1;
+            float y_ndc = 1 - 2 * ((j + 0.5) / (float)height);
+            // Factor in FOV and aspect ratio
+            float x_camera = x_ndc * tan(fov/2.0) * width/(float)height;
+            float y_camera = y_ndc * tan(fov/2.0);
+            // Create direction vector to pixel and store ray results in buffer
+            Vec3f direction = Vec3f(x_camera, y_camera, -1).normalise();
+            frame_buffer[i + j*width] = CastRay(Vec3f(0, 0, 0), direction, spheres);
         }
     }
 
@@ -101,7 +140,18 @@ void render(const Sphere &sphere)
 
 int main()
 {
-    Sphere sphere(Vec3f(-3, 0, -16), 2);
-    render(sphere);
+    // Create materials
+    Material ivory(Vec3f(0.4, 0.4, 0.3));
+    Material red_rubber(Vec3f(0.3, 0.1, 0.1));
+
+    // Create spheres
+    std::vector<Sphere> spheres;
+    spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, red_rubber));
+    spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
+    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, ivory));
+
+    // Render scene
+    Render(spheres);
     return 0;
 }
