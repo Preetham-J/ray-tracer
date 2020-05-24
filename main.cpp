@@ -10,7 +10,7 @@
 #include <vector>
 #include "geometry.hpp"
 
-// Light source
+// Light source for illumination
 struct Light
 {
     Light(const Vec3f& position, const float& intensity) :
@@ -20,14 +20,16 @@ struct Light
     float intensity;
 };
 
-// Rendered colours
+// Rendered colour for an object in the scene
 struct Material
 {
-    Material(const Vec3f& colour) :
-        diffuse_colour(colour)
+    Material(const Vec2f& albedo, const Vec3f& colour, const float& specular) :
+        albedo(albedo), diffuse_colour(colour), specular_exponent(specular)
     {}
-    Material() : diffuse_colour() {}
+    Material() : albedo(1, 0), diffuse_colour(), specular_exponent() {}
+    Vec2f albedo;
     Vec3f diffuse_colour;
+    float specular_exponent;
 };
 
 // Object used to populate the scene
@@ -76,6 +78,13 @@ class Sphere
         Material material_;
 };
 
+// Determine reflection vector
+Vec3f Reflect(const Vec3f& I, const Vec3f& normal)
+{
+    return I - normal*2.f*(I*normal);
+}
+
+
 // Determine overlapping sphere priority (intersections)
 bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, Vec3f& point_hit, Vec3f& normal, Material& material)
 {
@@ -104,15 +113,17 @@ Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sph
     {
         return Vec3f(0.2, 0.7, 0.8);
     }
-    // Else determine light intensity for return colour
-    float diffuse_light_intensity = 0;
+    // Else determine diffuse and specular light intensities for return colour
+    float diffuse_light_intensity = 0, specular_light_intensity = 0;
     for (std::size_t i = 0; i < lights.size(); i++)
     {
         // Use light direction and normal at the point of intersection to determine intensity (smaller angle = better illumination)
         Vec3f light_direction = (lights[i].position - point).normalise();
         diffuse_light_intensity += lights[i].intensity * std::max(0.f, light_direction*normal);
+        // Use the Phong reflection model to determine specular lighting
+        specular_light_intensity += powf(std::max(0.f, -Reflect(-light_direction, normal)*direction), material.specular_exponent) * lights[i].intensity;
     }
-    return material.diffuse_colour * diffuse_light_intensity;
+    return material.diffuse_colour*diffuse_light_intensity*material.albedo[0] + Vec3f(1.0, 1.0, 1.0)*specular_light_intensity*material.albedo[1];
 }
 
 // Render image
@@ -146,6 +157,12 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
     output_file << "P6\n" << width << " " << height << "\n255\n";
     for (std::size_t i = 0; i < height*width; ++i)
     {
+        Vec3f& c = frame_buffer[i];
+        float max = std::max(c[0], std::max(c[1], c[2]));
+        if (max > 1)
+        {
+            c = c * (1./max);
+        }
         for (std::size_t j = 0; j < 3; j++)
         {
             output_file << (char)(255 * std::max(0.f, std::min(1.f, frame_buffer[i][j])));
@@ -157,8 +174,8 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
 int main()
 {
     // Create materials
-    Material ivory(Vec3f(0.4, 0.4, 0.3));
-    Material red_rubber(Vec3f(0.3, 0.1, 0.1));
+    Material ivory(Vec2f(0.6, 0.3), Vec3f(0.4, 0.4, 0.3), 50.0);
+    Material red_rubber(Vec2f(0.9, 0.1), Vec3f(0.3, 0.1, 0.1), 10.0);
 
     // Create spheres
     std::vector<Sphere> spheres;
@@ -167,9 +184,11 @@ int main()
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
     spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, ivory));
 
-    // Create light source
+    // Create light sources
     std::vector<Light> lights;
     lights.push_back(Light(Vec3f(-20, 20, 20), 1.5));
+    lights.push_back(Light(Vec3f(30, 50, -25), 1.8));
+    lights.push_back(Light(Vec3f(30, 20, 30), 1.7));
 
     // Render scene
     Render(spheres, lights);
