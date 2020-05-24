@@ -1,9 +1,9 @@
 #! /bin/sh
 
-rm a.out
-rm output.ppm
+mkdir -p build/
+cd build/
+cmake ..
+make
 
-g++ main.cpp
-./a.out
-
+./ray-tracer
 display output.ppm
