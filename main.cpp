@@ -10,6 +10,10 @@
 #include <vector>
 #include "geometry.hpp"
 
+// Maximum recursive calls per reflected ray
+#define MAXIMUM_REFLECTION_DEPTH 4
+
+
 // Light source for illumination
 struct Light
 {
@@ -23,11 +27,11 @@ struct Light
 // Rendered colour for an object in the scene
 struct Material
 {
-    Material(const Vec2f& albedo, const Vec3f& colour, const float& specular) :
+    Material(const Vec3f& albedo, const Vec3f& colour, const float& specular) :
         albedo(albedo), diffuse_colour(colour), specular_exponent(specular)
     {}
-    Material() : albedo(1, 0), diffuse_colour(), specular_exponent() {}
-    Vec2f albedo;
+    Material() : albedo(1, 0, 0), diffuse_colour(), specular_exponent() {}
+    Vec3f albedo;
     Vec3f diffuse_colour;
     float specular_exponent;
 };
@@ -78,10 +82,10 @@ class Sphere
         Material material_;
 };
 
-// Determine reflection vector
-Vec3f Reflect(const Vec3f& I, const Vec3f& normal)
+// Determine reflection vector using incident angle and surface normal
+Vec3f Reflect(const Vec3f& incident, const Vec3f& normal)
 {
-    return I - normal*2.f*(I*normal);
+    return incident - normal*2.f*(incident*normal);
 }
 
 
@@ -106,15 +110,23 @@ bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vect
 
 // Cast a ray from the origin to the spheres in the given direction
 Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, 
-              const std::vector<Light>& lights)
+              const std::vector<Light>& lights, std::size_t depth = 0)
 {
     Vec3f point, normal;
     Material material;
+
     // If the ray doesn't intersect, return background colour
-    if (!SceneIntersect(origin, direction, spheres, point, normal, material))
+    // Additionally, boundary check maximum reflection depth
+    if ((depth > MAXIMUM_REFLECTION_DEPTH) || (!SceneIntersect(origin, direction, spheres, point, normal, material)))
     {
         return Vec3f(0.2, 0.7, 0.8);
     }
+
+    // Recursively call CastRay for each reflected ray
+    Vec3f reflect_direction = Reflect(direction, normal);
+    Vec3f reflect_origin = reflect_direction*normal < 0 ? point - normal*1e-3 : point + normal*1e-3;
+    Vec3f reflect_colour = CastRay(reflect_origin, reflect_direction, spheres, lights, depth + 1);
+
     // Else determine diffuse and specular light intensities for return colour
     float diffuse_light_intensity = 0, specular_light_intensity = 0;
     for (std::size_t i = 0; i < lights.size(); i++)
@@ -140,7 +152,8 @@ Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sph
                                          material.specular_exponent) * lights[i].intensity;
     }
     return material.diffuse_colour*diffuse_light_intensity*material.albedo[0] + 
-           Vec3f(1.0, 1.0, 1.0)*specular_light_intensity*material.albedo[1];
+           Vec3f(1.0, 1.0, 1.0)*specular_light_intensity*material.albedo[1] +
+           reflect_colour*material.albedo[2];
 }
 
 // Render image
@@ -191,15 +204,16 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
 int main()
 {
     // Create materials
-    Material ivory(Vec2f(0.6, 0.3), Vec3f(0.4, 0.4, 0.3), 50.0);
-    Material red_rubber(Vec2f(0.9, 0.1), Vec3f(0.3, 0.1, 0.1), 10.0);
+    Material ivory(Vec3f(0.6, 0.3, 0.1), Vec3f(0.4, 0.4, 0.3), 50.0);
+    Material red_rubber(Vec3f(0.9, 0.1, 0.0), Vec3f(0.3, 0.1, 0.1), 10.0);
+    Material mirror(Vec3f(0.0, 10.0, 0.8), Vec3f(1.0, 1.0, 1.0), 1425.0);
 
     // Create spheres
     std::vector<Sphere> spheres;
     spheres.push_back(Sphere(Vec3f(-3, 0, -16), 2, ivory));
-    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, red_rubber));
+    spheres.push_back(Sphere(Vec3f(-1.0, -1.5, -12), 2, mirror));
     spheres.push_back(Sphere(Vec3f(1.5, -0.5, -18), 3, red_rubber));
-    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, ivory));
+    spheres.push_back(Sphere(Vec3f(7, 5, -18), 4, mirror));
 
     // Create light sources
     std::vector<Light> lights;
