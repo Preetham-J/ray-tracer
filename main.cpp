@@ -86,7 +86,8 @@ Vec3f Reflect(const Vec3f& I, const Vec3f& normal)
 
 
 // Determine overlapping sphere priority (intersections)
-bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, Vec3f& point_hit, Vec3f& normal, Material& material)
+bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, Vec3f& point_hit,
+                    Vec3f& normal, Material& material)
 {
     float spheres_distance = std::numeric_limits<float>::max();
     for (std::size_t i = 0; i < spheres.size(); i++)
@@ -104,7 +105,8 @@ bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vect
 }
 
 // Cast a ray from the origin to the spheres in the given direction
-Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, const std::vector<Light>& lights)
+Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, 
+              const std::vector<Light>& lights)
 {
     Vec3f point, normal;
     Material material;
@@ -119,11 +121,26 @@ Vec3f CastRay(const Vec3f& origin, const Vec3f& direction, const std::vector<Sph
     {
         // Use light direction and normal at the point of intersection to determine intensity (smaller angle = better illumination)
         Vec3f light_direction = (lights[i].position - point).normalise();
+
+        // Check if there is an object between the point and the light source; if there is, skip the light source
+        float light_distance = (lights[i].position - point).norm();
+        Vec3f shadow_origin = light_direction*normal < 0 ? point - normal*1e-3 : point + normal*1e-3;
+        Vec3f shadow_point, shadow_normal;
+        Material temp_material;
+        if ((SceneIntersect(shadow_origin, light_direction, spheres, shadow_point, shadow_normal, temp_material)) &&
+                            ((shadow_point - shadow_origin).norm() < light_distance))
+        {
+            continue;
+        }
+
+        // Diffuse illumination
         diffuse_light_intensity += lights[i].intensity * std::max(0.f, light_direction*normal);
         // Use the Phong reflection model to determine specular lighting
-        specular_light_intensity += powf(std::max(0.f, -Reflect(-light_direction, normal)*direction), material.specular_exponent) * lights[i].intensity;
+        specular_light_intensity += powf(std::max(0.f, -Reflect(-light_direction, normal)*direction),
+                                         material.specular_exponent) * lights[i].intensity;
     }
-    return material.diffuse_colour*diffuse_light_intensity*material.albedo[0] + Vec3f(1.0, 1.0, 1.0)*specular_light_intensity*material.albedo[1];
+    return material.diffuse_colour*diffuse_light_intensity*material.albedo[0] + 
+           Vec3f(1.0, 1.0, 1.0)*specular_light_intensity*material.albedo[1];
 }
 
 // Render image
