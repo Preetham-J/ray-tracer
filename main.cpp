@@ -8,10 +8,20 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include "geometry.hpp"
 
 // Maximum recursive calls per reflected/refracted ray
 #define MAXIMUM_DEPTH 4
+
+// Environment map
+int environment_map_width, environment_map_height;
+std::vector<Vec3f> environment_map;
 
 
 // Light source for illumination
@@ -222,9 +232,7 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
     }
 
     // Create output file and write to it
-    std::ofstream output_file;
-    output_file.open("./output.ppm");
-    output_file << "P6\n" << width << " " << height << "\n255\n";
+    std::vector<unsigned char> pixel_map(width*height*3);
     for (std::size_t i = 0; i < height*width; ++i)
     {
         Vec3f& c = frame_buffer[i];
@@ -235,14 +243,36 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
         }
         for (std::size_t j = 0; j < 3; j++)
         {
-            output_file << (char)(255 * std::max(0.f, std::min(1.f, frame_buffer[i][j])));
+            pixel_map[i*3 + j] = (unsigned char)(255 * std::max(0.f, std::min(1.f, frame_buffer[i][j])));
         }
     }
-    output_file.close();
+    stbi_write_jpg("output.jpg", width, height, 3, pixel_map.data(), 100);
 }
 
 int main()
 {
+    // Load environment map
+    int n = -1;
+    unsigned char* pixel_map = stbi_load("../environment_map.jpg", &environment_map_width, &environment_map_height,
+                                         &n, 0);
+    if (!pixel_map || 3 != n)
+    {
+        std::cerr << "Error: Can not load the environment map." << std::endl;
+        return -1;
+    }
+
+    environment_map = std::vector<Vec3f>(environment_map_width*environment_map_height);
+    for (int j = environment_map_height-1; j >= 0; j--)
+    {
+        for (int i = 0; i < environment_map_width; i++)
+        {
+            environment_map[i + j*environment_map_width] = Vec3f(pixel_map[(i + j*environment_map_width)*3 + 0],
+                                                                 pixel_map[(i + j*environment_map_width)*3 + 1],
+                                                                 pixel_map[(i + j*environment_map_width)*3 + 2])*(1/255.0);
+        }
+    }
+    stbi_image_free(pixel_map);
+
     // Create materials
     Material ivory(1.0, Vec4f(0.6, 0.3, 0.1, 0.0), Vec3f(0.4, 0.4, 0.3), 50.0);
     Material glass(1.5, Vec4f(0.0, 0.5, 0.1, 0.8), Vec3f(0.6, 0.7, 0.8), 125.0);

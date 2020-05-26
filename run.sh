@@ -6,4 +6,4 @@ cmake ..
 make
 
 ./ray-tracer
-display output.ppm
+display output.jpg
