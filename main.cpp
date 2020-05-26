@@ -107,10 +107,11 @@ Vec3f Reflect(const Vec3f& incident, const Vec3f& normal)
     return incident - normal*2.f*(incident*normal);
 }
 
-// Determine overlapping sphere priority (intersections)
+// Determine intersections in the scene (overlaps, priorities)
 bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vector<Sphere>& spheres, Vec3f& point_hit,
                     Vec3f& normal, Material& material)
 {
+    // Spheres
     float spheres_distance = std::numeric_limits<float>::max();
     for (std::size_t i = 0; i < spheres.size(); i++)
     {
@@ -123,7 +124,27 @@ bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vect
             material = spheres[i].GetMaterial();
         }
     }
-    return spheres_distance < 1000;
+
+    // Checkerboard
+    float checkerboard_distance = std::numeric_limits<float>::max();
+    if (fabs(direction.y) > 1e-3)
+    {
+        // Defines plane at y = -4, with boundaries for x and z
+        float d = -(origin.y + 4)/direction.y;
+        Vec3f point = origin + direction*d;
+        if ((d > 0) && (fabs(point.x) < 10) && (point.z < -10) && (point.z > -30) && (d < spheres_distance))
+        {
+            checkerboard_distance = d;
+            point_hit = point;
+            normal = Vec3f(0, 1, 0);
+            // Define checkerboard material
+            material.diffuse_colour = (int(0.5*point_hit.x + 1000) + int(0.5*point_hit.z)) & 1 ?
+                                      Vec3f(1, 1, 1) : Vec3f(1, 0.7, 0.3);
+            material.diffuse_colour = material.diffuse_colour*0.3;
+        }
+    }
+
+    return std::min(spheres_distance, checkerboard_distance) < 1000;
 }
 
 // Cast a ray from the origin to the spheres in the given direction
