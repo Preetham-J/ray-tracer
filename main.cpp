@@ -17,7 +17,7 @@
 // Light source for illumination
 struct Light
 {
-    Light(const Vec3f& position, const float& intensity) :
+    Light(const Vec3f& position, const float intensity) :
         position(position), intensity(intensity)
     {}
     Vec3f position;
@@ -27,7 +27,7 @@ struct Light
 // Rendered colour for an object in the scene
 struct Material
 {
-    Material(const float& refractive, const Vec4f& albedo, const Vec3f& colour, const float& specular) :
+    Material(const float refractive, const Vec4f& albedo, const Vec3f& colour, const float specular) :
         refractive_index(refractive), albedo(albedo), diffuse_colour(colour), specular_exponent(specular)
     {}
     Material() : refractive_index(1), albedo(1, 0, 0, 0), diffuse_colour(), specular_exponent() {}
@@ -41,7 +41,7 @@ struct Material
 class Sphere
 {
     public:
-        Sphere(const Vec3f& center, const float& radius, const Material& material) :
+        Sphere(const Vec3f& center, const float radius, const Material& material) :
             center_(center), radius_(radius), material_(material)
         {}
 
@@ -84,21 +84,18 @@ class Sphere
 };
 
 // Use Snell's Law to determine the refraction vector
-Vec3f Refract(const Vec3f& incident, const Vec3f& normal, const float& refractive_index)
+Vec3f Refract(const Vec3f& incident, const Vec3f& normal, const float eta_t, const float eta_i=1.f)
 {
     float cos_i = -std::max(-1.f, std::min(1.f, incident*normal));
-    float eta_i = 1, eta_t = refractive_index;
-    Vec3f n = normal;
-    // If the ray is inside the object, swap indices and invert the normal
+    // If the ray is inside the object, swap eta_i <-> eta_t and invert the normal
     if (cos_i < 0)
     {
-        cos_i = -cos_i;
-        std::swap(eta_i, eta_t);
-        n = -normal;
+        return Refract(incident, -normal, eta_i, eta_t);
     }
     float eta = eta_i/eta_t;
     float k = 1 - eta*eta*(1 - cos_i*cos_i);
-    return k < 0 ? Vec3f(0, 0, 0) : incident*eta + n*(eta*cos_i - sqrtf(k));
+    // k < 0 = total reflection
+    return k < 0 ? Vec3f(1, 0, 0) : incident*eta + normal*(eta*cos_i - sqrtf(k));
 }
 
 // Determine reflection vector using incident angle and surface normal
@@ -139,8 +136,7 @@ bool SceneIntersect(const Vec3f& origin, const Vec3f& direction, const std::vect
             normal = Vec3f(0, 1, 0);
             // Define checkerboard material
             material.diffuse_colour = (int(0.5*point_hit.x + 1000) + int(0.5*point_hit.z)) & 1 ?
-                                      Vec3f(1, 1, 1) : Vec3f(1, 0.7, 0.3);
-            material.diffuse_colour = material.diffuse_colour*0.3;
+                                      Vec3f(0.3, 0.3, 0.3) : Vec3f(0.3, 0.2, 0.1);
         }
     }
 
@@ -214,15 +210,14 @@ void Render(const std::vector<Sphere>& spheres, const std::vector<Light>& lights
     {
         for (std::size_t i = 0; i < width; i++)
         {
-            // Use normalized device coordinates remapped from [0:1] to [-1:1]
-            float x_ndc = 2 * ((i + 0.5) / (float)width) - 1;
-            float y_ndc = 1 - 2 * ((j + 0.5) / (float)height);
-            // Factor in FOV and aspect ratio
-            float x_camera = x_ndc * tan(fov/2.0) * width/(float)height;
-            float y_camera = y_ndc * tan(fov/2.0);
-            // Create direction vector to pixel and store ray results in buffer
-            Vec3f direction = Vec3f(x_camera, y_camera, -1).normalise();
-            frame_buffer[i + j*width] = CastRay(Vec3f(0, 0, 0), direction, spheres, lights);
+            // Create direction vector to pixel and store ray tracing results in buffer
+            float direction_x = (i + 0.5) - width/2.0;
+            float direction_y = -(j + 0.5) + height/2.0;
+            float direction_z = -height/(2.0*tan(fov/2));
+            frame_buffer[i + j*width] = CastRay(Vec3f(0, 0, 0),
+                                                Vec3f(direction_x, direction_y, direction_z).normalise(),
+                                                spheres,
+                                                lights);
         }
     }
 
